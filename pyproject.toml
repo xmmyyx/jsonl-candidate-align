@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jsonl-candidate-align"
+version = "0.1.0"
+description = "Lexical JSONL candidate alignment and exact-score validation; nonpublic local candidate"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = []
+classifiers = ["Programming Language :: Python :: 3"]
+
+[project.scripts]
+jsonl-align = "jsonl_candidate_align.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
