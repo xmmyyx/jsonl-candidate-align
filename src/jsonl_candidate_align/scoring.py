@@ -1,4 +1,4 @@
-"""Existing pure functions, extracted unchanged; local candidate only."""
+"""Lexical scoring for prestructured JSONL candidate alignment."""
 from __future__ import annotations
 import re, time, unicodedata
 from collections import Counter, defaultdict

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jsonl-candidate-align"
 version = "0.1.0"
-description = "Lexical JSONL candidate alignment and exact-score validation; nonpublic local candidate"
+description = "Lexical JSONL candidate alignment and exact-score validation"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

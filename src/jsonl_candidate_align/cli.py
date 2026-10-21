@@ -1,4 +1,4 @@
-"""Portable filesystem adapter. Existing pure scoring/comparison is unchanged."""
+"""Filesystem adapter for JSONL lexical alignment and validation."""
 import argparse
 from collections import defaultdict
 from decimal import Decimal
@@ -122,7 +122,7 @@ def _output(path,inputs):
 def _digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 def main(argv=None):
-    parser=argparse.ArgumentParser(description='JSONL lexical candidate alignment (local candidate; no document parser)')
+    parser=argparse.ArgumentParser(description='JSONL lexical candidate alignment (no document parser)')
     parser.add_argument('--version',action='version',version=__version__)
     sub=parser.add_subparsers(dest='command',required=True)
     for name in ['align','validate']:

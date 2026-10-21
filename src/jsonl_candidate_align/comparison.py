@@ -1,4 +1,4 @@
-"""Existing pure functions, extracted unchanged; local candidate only."""
+"""Exact-score and candidate-ranking comparison."""
 from __future__ import annotations
 from decimal import Decimal
 

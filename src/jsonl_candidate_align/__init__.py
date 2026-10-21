@@ -1,2 +1,2 @@
-"""JSONL lexical candidate alignment; nonpublic local release candidate."""
+"""JSONL lexical candidate alignment and validation."""
 __version__ = '0.1.0'

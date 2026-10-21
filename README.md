@@ -1,41 +1,44 @@
 # JSONL Candidate Align
 
-Local, nonpublic source candidate for version 0.1.0. The MIT copyright attribution is confirmed as Qi Zheng. Source-code rights review remains pending, and GitHub publication has not been authorized or carried out.
+Lexical candidate retrieval and exact-score validation for structured JSONL records. A personal open-source project by Qi Zheng, licensed under MIT.
 
-## Purpose
+[简体中文](README.zh-CN.md)
 
-`jsonl-candidate-align` retrieves lexical candidates from already structured JSONL records and checks candidate output against the same lexical rules. The Python module is `jsonl_candidate_align`; the command is `jsonl-align`.
+`jsonl-candidate-align` ranks candidate records using character-trigram and numeric overlap, then checks candidate output against the same lexical rules. The Python module is `jsonl_candidate_align`; the command is `jsonl-align`.
 
-The input types are supplied by the caller. The program does not parse PDF or Word files, perform OCR, extract requirement objects, determine semantic compliance, or make procurement decisions. Similar text and matching numbers are retrieval signals, not proof that a requirement is satisfied.
+Inputs must already be structured and typed by the caller. The program does not parse PDF or Word files, perform OCR, extract requirement objects, determine semantic compliance, or make procurement decisions. Similar text and matching numbers are retrieval signals, not proof that a requirement is satisfied.
 
-## Environment and installation
+## Requirements and installation
 
-Python >=3.11 is declared. No third-party runtime packages are declared; runtime code uses the Python standard library. Source builds require `setuptools>=77` and `wheel` through the declared build backend.
+Requires Python >=3.11. Runtime code uses only the Python standard library. Source builds require `setuptools>=77` and `wheel`.
 
-The documented source-install recipe below applies in the source directory containing `pyproject.toml` and `README.md`. Source-code rights review and authorization for any public distribution remain pending:
+From the source directory containing `pyproject.toml`:
 
 ```powershell
 python -m pip install .
 ```
 
-This is a declared source-install procedure, not an installation result for the proposed source set. No public download URL or prebuilt archive is supplied by this draft. The command requires access to the declared build tools; it is not an offline-install guarantee.
+Installation requires access to the declared build tools. The installed command is `jsonl-align`; the equivalent module entry point is `python -m jsonl_candidate_align`. Use `--help` for usage or `--version` for the version.
 
-The installed command is `jsonl-align`. The module entry point is `python -m jsonl_candidate_align`. Top-level help and version options are `--help` and `--version`.
+## Usage
 
-## Command interface
+With your own `queries.jsonl` and `candidates.jsonl`:
 
-Provide your own authorized input files. This proposed source scope includes no demonstration dataset or test fixtures. The table is an interface specification, not an executable demonstration or a record of execution.
+```powershell
+jsonl-align align --queries queries.jsonl --candidates candidates.jsonl --output-dir alignment-output
+jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --actual alignment-output/candidate_alignment_rows.jsonl --output-dir validation-output
+```
 
-| Subcommand | Required options | Optional options | Files written under the selected output directory |
+| Subcommand | Required options | Optional options | Files written under the output directory |
 |---|---|---|---|
 | `align` | `--queries`, `--candidates`, `--output-dir` | `--blind-ids` followed by one or more exact query IDs | `candidate_alignment_rows.jsonl`, `candidate_alignment_summary.json` |
 | `validate` | `--queries`, `--candidates`, `--actual`, `--output-dir` | None | `object_comparison.jsonl`, `validation_summary.json` |
 
-The query and candidate options identify input JSONL files. `--actual` identifies candidate rows to check. `--output-dir` must name a new directory; existing directories are rejected. No input file may lie within that output directory. Relative paths are interpreted from the caller's working directory.
+`--queries` and `--candidates` identify input JSONL files. `--actual` identifies candidate rows to check. Each `--output-dir` must name a new directory; existing directories are rejected. No input file may lie within that output directory. Relative paths are interpreted from the caller's working directory.
 
-`validate` checks every query in the supplied query file. It has no `--blind-ids` option. A result generated for a selected subset is not automatically complete for the original full query file.
+`validate` checks every query in the supplied query file. It has no `--blind-ids` option. To validate a subset, supply a query file containing that subset; partial output is not automatically complete for the original full query file.
 
-Exit codes: 0 for successful alignment or passing validation; 1 for parsed output that fails validation; 2 for CLI, input or path errors.
+Exit codes: `0` for successful alignment or passing validation; `1` for parsed output that fails validation; `2` for CLI, input or path errors.
 
 ## Input contract
 
@@ -51,32 +54,49 @@ Use UTF-8 JSONL, optionally with a BOM, containing one JSON object per nonblank 
 | Candidate | `comparable_text` | Required string |
 | Candidate | `pages` | Optional list of positive integers; defaults to an empty list |
 
-Candidate types are `M3_AUTO_KEEP`, `M4_AUTO_KEEP`, `NARRATIVE_RESPONSE`, `TEMPLATE_COMMITMENT`, `MANUAL_RESOLVED_FACT`, `MANUAL_RESOLVED_BUNDLE` and `VISUAL_EVIDENCE`. These are compatibility labels; the program does not establish that they are true descriptions of a record. Any supplied `pages` field is checked for positive integer values, including when it occurs on a query object.
+Candidate types are `M3_AUTO_KEEP`, `M4_AUTO_KEEP`, `NARRATIVE_RESPONSE`, `TEMPLATE_COMMITMENT`, `MANUAL_RESOLVED_FACT`, `MANUAL_RESOLVED_BUNDLE` and `VISUAL_EVIDENCE`. These are compatibility labels; the program does not establish that they accurately describe a record. Any supplied `pages` field is checked for positive integer values, including when it occurs on a query object.
 
-No sample input rows or expected result rows are included here.
+## Scoring rules
+
+Text is normalized with Unicode NFKC, lowercasing, and removal of whitespace and selected punctuation. Character trigrams form a set; a nonempty string shorter than three characters forms a single token. Numeric tokens are extracted separately from the original text.
+
+The scorer selects up to 80 records by shared-trigram count, requiring at least two shared trigrams. If this pre-pool is empty and the query has numeric tokens, it falls back to up to 40 type-compatible records with numeric overlap, in input order. The CLI uses lexical scoring without context additions.
+
+For each candidate:
+
+| Metric | Definition |
+|---|---|
+| `jaccard` | Shared trigrams divided by the union of the trigram sets |
+| `containment` | Shared trigrams divided by the smaller trigram-set size |
+| `number_overlap` | Shared numeric tokens divided by the smaller numeric-token-set size; zero if either set is empty |
+| `score` | `0.35 * jaccard + 0.55 * containment + 0.10 * number_overlap` |
+
+An admitted candidate must have a compatible type and at least one shared trigram, and satisfy at least one condition: `score >= 0.10`, `containment >= 0.16`, or both `number_overlap >= 0.50` and `containment >= 0.08`. These thresholds use unrounded values.
+
+`SC` and `MRU` accept every candidate type except `VISUAL_EVIDENCE`. `SU` and `EI` accept every candidate type except `NARRATIVE_RESPONSE`.
+
+Scores and overlap fractions are rounded to six decimal places for output. Up to eight candidates are returned per query, sorted by descending rounded score and then by persistent candidate ID for equal scores. Ranks start at one.
 
 ## Output and validation
 
-Each alignment row contains these 11 fields: `blind_id`, `blind_type`, `holdout_unit_id`, `holdout_unit_type`, `holdout_pages`, `score`, `jaccard`, `containment`, `number_overlap`, `shared_trigrams` and `rank`.
-
-Ranks are one-based. Up to eight candidates are returned for each query. Final equal scores sort by persistent candidate ID. Page values come from the caller's candidate record. Scores and overlap fractions are in [0,1]; `shared_trigrams` is a nonnegative integer. Validation requires finite numeric metrics, positive integer ranks and matching input IDs, types and page lists.
+Each alignment row contains 11 fields: `blind_id`, `blind_type`, `holdout_unit_id`, `holdout_unit_type`, `holdout_pages`, `score`, `jaccard`, `containment`, `number_overlap`, `shared_trigrams` and `rank`. Page values come from the caller's candidate record. Scores and overlap fractions are in [0,1]; `shared_trigrams` is a nonnegative integer.
 
 The alignment summary contains `version`, `mode`, `blind_ids`, `candidate_alignment_rows`, `top_k`, `zero_candidate_blind_ids`, `semantic_gold_or_external_accuracy_evaluated`, `queries_sha256` and `candidates_sha256`.
 
-Validation recomputes the lexical reference, independently checks supplied metrics and eligibility, and compares candidate sets and ranks using exact Decimal score equality. It can accept justified equal-score reorderings or full-capacity boundary substitutions. A score tie alone does not authorize an unknown candidate.
+Validation recomputes the lexical reference and independently checks every supplied candidate's metrics and eligibility. It requires finite numeric metrics, positive integer ranks, and IDs, types and page lists matching the inputs. It compares candidate sets and ranks using exact Decimal score equality, checks for duplicates and rank gaps, and enforces the eight-candidate limit.
 
-The validation summary contains `status`, `queries_checked`, `candidate_rows_checked`, `failed_queries`, `comparison_scope` and `semantic_gold_or_external_accuracy_evaluated`. Per-query comparison records describe candidate-set changes, rank/score changes, tie equivalence, admission checks and metric mismatches. A validation PASS means agreement with the lexical contract for the supplied inputs; it is not a semantic accuracy or procurement-compliance result.
+Equal-score reorderings can pass when the other checks hold. A boundary substitution requires full lists of eight, the same cutoff score, equal numbers of additions and removals at that cutoff, independently verified added candidates, and no score drift. A score tie alone does not authorize an unknown or ineligible candidate.
 
-## Limits and local data handling
+The validation summary contains `status`, `queries_checked`, `candidate_rows_checked`, `failed_queries`, `comparison_scope` and `semantic_gold_or_external_accuracy_evaluated`. Per-query comparison records describe candidate-set changes, rank/score changes, tie equivalence, admission checks and metric mismatches.
 
-The scorer uses a fixed 80-member character-trigram pre-pool, a numeric fallback of up to 40 and a final limit of eight. Arbitrary input-order or hash-seed stability at the pre-pool cutoff is not guaranteed. Inputs load into memory; large-corpus performance and hostile-input resource limits have not been established.
+A validation `PASS` means agreement with the lexical contract for the supplied inputs. It is not a semantic accuracy or procurement-compliance result. The summaries set `semantic_gold_or_external_accuracy_evaluated` to `false`.
 
-The runtime processes local JSONL and writes to the explicitly selected new directory. It does not require a network service, model or original document corpus. Outputs include supplied IDs, pages and metrics; errors can identify input filenames and IDs. Handle inputs, outputs and logs according to their sensitivity.
+## Known limitations and data handling
 
-## Version and evidence boundary
+The pre-pool cutoff is not guaranteed to be stable across arbitrary input orders or Python hash seeds. The fixed limits of 80 pre-pool records, 40 numeric-fallback records and eight results can exclude relevant candidates. Inputs load into memory; large-corpus performance and hostile-input resource limits have not been established.
 
-An earlier nonpublic local candidate has historical technical acceptance. That acceptance is separate from this isolated local source candidate and these documents. This source set has been assembled in a separate local directory and reviewed statically; it has not been built, installed or executed, and no tests were run during this stage. Static dependency completeness does not establish installation success, platform acceptance or permission to publish.
+The runtime processes local JSONL and writes to the explicitly selected new directory. It does not require a network service, model or original document corpus. Outputs include supplied IDs, pages and metrics; errors can identify input filenames and IDs. Use inputs you are authorized to process, and handle inputs, outputs and logs according to their sensitivity.
 
-## License and publication status
+## License
 
-MIT is the selected license. The standard text in [LICENSE](LICENSE) states `Copyright (c) 2026 Qi Zheng`; the copyright attribution has been confirmed by the project initiator. Package metadata remains `license = "MIT"` and `license-files = ["LICENSE"]`. Relevant source-code rights, including third-party, contractual and notice obligations, still require review; the confirmed attribution does not establish final clearance of all such rights. GitHub publication has neither been authorized nor carried out.
+[MIT License](LICENSE). Copyright (c) 2026 Qi Zheng.
