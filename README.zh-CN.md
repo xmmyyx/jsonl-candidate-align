@@ -20,6 +20,46 @@ python -m pip install .
 
 安装时需要能够取得声明的构建工具。安装后的命令为`jsonl-align`，等价的模块入口为`python -m jsonl_candidate_align`。使用`--help`查看用法，使用`--version`查看版本。
 
+## 快速开始
+
+安装本项目后，激活安装时使用的Python环境，在新的工作目录中打开终端。无需下载任何数据：以下记录、ID和页码均为完全合成的示例。
+
+使用文本编辑器，在该工作目录中将以下两个文件保存为UTF-8编码，每个文件仅有一行，该行包含一个JSON对象。
+
+`queries.jsonl`：
+
+```json
+{"blind_id":"DEMO-Q1","blind_type":"SC","comparable_text":"cobalt sensor 314159"}
+```
+
+`candidates.jsonl`：
+
+```json
+{"holdout_unit_id":"DEMO-C1","holdout_unit_type":"M3_AUTO_KEEP","comparable_text":"cobalt sensor 314159","pages":[1]}
+```
+
+在已安装本项目的Python环境中执行以下命令。两个输出目录均须此前不存在。再次运行时，请使用新的输出目录名称，并将`--actual`改为指向新的候选输出文件。
+
+```powershell
+jsonl-align align --queries queries.jsonl --candidates candidates.jsonl --output-dir alignment-output
+jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --actual alignment-output/candidate_alignment_rows.jsonl --output-dir validation-output
+```
+
+该示例在`alignment-output/candidate_alignment_rows.jsonl`中生成一条候选记录。两个命令的退出码均为`0`；`validation-output/validation_summary.json`内容如下：
+
+```json
+{
+  "status": "PASS",
+  "queries_checked": 1,
+  "candidate_rows_checked": 1,
+  "failed_queries": [],
+  "comparison_scope": "LEXICAL_CANDIDATE_OUTPUT_ONLY",
+  "semantic_gold_or_external_accuracy_evaluated": false
+}
+```
+
+`PASS`表示这些输入的输出符合词法契约，不代表语义匹配正确、需求已满足或招投标合规。
+
 ## 使用方法
 
 准备自己的`queries.jsonl`和`candidates.jsonl`后执行：

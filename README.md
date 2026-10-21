@@ -20,6 +20,46 @@ python -m pip install .
 
 Installation requires access to the declared build tools. The installed command is `jsonl-align`; the equivalent module entry point is `python -m jsonl_candidate_align`. Use `--help` for usage or `--version` for the version.
 
+## Quickstart
+
+After installing this project, activate that Python environment and open a terminal in a new working directory. No data download is needed: the records, IDs and page number below are entirely synthetic.
+
+Using a text editor, save these two files as UTF-8 in that working directory, with one JSON object on the only line of each file.
+
+`queries.jsonl`:
+
+```json
+{"blind_id":"DEMO-Q1","blind_type":"SC","comparable_text":"cobalt sensor 314159"}
+```
+
+`candidates.jsonl`:
+
+```json
+{"holdout_unit_id":"DEMO-C1","holdout_unit_type":"M3_AUTO_KEEP","comparable_text":"cobalt sensor 314159","pages":[1]}
+```
+
+Run these commands in the Python environment where this project is installed. Both output directories must not already exist. For another run, use new output directory names and update `--actual` to point to the new alignment output.
+
+```powershell
+jsonl-align align --queries queries.jsonl --candidates candidates.jsonl --output-dir alignment-output
+jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --actual alignment-output/candidate_alignment_rows.jsonl --output-dir validation-output
+```
+
+This example produces one candidate row in `alignment-output/candidate_alignment_rows.jsonl`. Both commands exit with code `0`; `validation-output/validation_summary.json` contains:
+
+```json
+{
+  "status": "PASS",
+  "queries_checked": 1,
+  "candidate_rows_checked": 1,
+  "failed_queries": [],
+  "comparison_scope": "LEXICAL_CANDIDATE_OUTPUT_ONLY",
+  "semantic_gold_or_external_accuracy_evaluated": false
+}
+```
+
+`PASS` confirms agreement with the lexical contract for these inputs. It does not establish correct semantic matching, requirement satisfaction or procurement compliance.
+
 ## Usage
 
 With your own `queries.jsonl` and `candidates.jsonl`:
