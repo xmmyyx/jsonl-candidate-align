@@ -60,6 +60,10 @@ This example produces one candidate row in `alignment-output/candidate_alignment
 
 `PASS` confirms agreement with the lexical contract for these inputs. It does not establish correct semantic matching, requirement satisfaction or procurement compliance.
 
+## Technical walkthrough
+
+[Why I Added a Validator to a Small JSONL Candidate Ranker](https://dev.to/xmmyyx/why-i-added-a-validator-to-a-small-jsonl-candidate-ranker-43c7) walks through the two CLI commands, a synthetic score-drift example, and the limits of validation.
+
 ## Usage
 
 With your own `queries.jsonl` and `candidates.jsonl`:

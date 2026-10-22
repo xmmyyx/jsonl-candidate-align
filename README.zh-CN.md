@@ -60,6 +60,10 @@ jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --act
 
 `PASS`表示这些输入的输出符合词法契约，不代表语义匹配正确、需求已满足或招投标合规。
 
+## 技术文章
+
+[这篇英文技术文章](https://dev.to/xmmyyx/why-i-added-a-validator-to-a-small-jsonl-candidate-ranker-43c7)介绍了两个 CLI 入口的分工、合成分数漂移示例，以及校验结果的能力边界。
+
 ## 使用方法
 
 准备自己的`queries.jsonl`和`candidates.jsonl`后执行：
