@@ -1,18 +1,35 @@
 # JSONL Candidate Align
 
-面向结构化JSONL记录的词法候选检索与精确分数校验工具。由Qi Zheng维护的个人开源项目，采用MIT许可证。
+**从 JSONL 文本记录中筛选候选，再核对已保存的分数和排名是否仍与原始输入一致。**
 
 [English](README.md)
 
-`jsonl-candidate-align`根据字符三元组与数字重合对候选记录排序，并按同一词法规则检查候选输出。Python模块名称为`jsonl_candidate_align`，命令名称为`jsonl-align`。
+假设你有一条查询 `cobalt sensor 314159` 和一批待人工查看的文本记录：`jsonl-align align` 根据共同字符片段和数字，为每条查询返回最多 8 个候选。如果后续脚本编辑或转换了结果文件，`jsonl-align validate` 会从原始输入重算参考，报告分数、入选候选或排名的差异。
 
-输入须由调用者预先完成结构化和类型标注。程序不解析PDF或Word文件，不进行OCR，不从文档生成需求对象，不判断语义合规，也不作招投标决策。文本相似和数字重合只是检索信号，不能证明需求已经得到满足。
+| 步骤 | 你提供什么 | 得到什么 |
+|---|---|---|
+| `align` | 查询 JSONL + 候选池 JSONL | 带 ID、分数及传入页码的候选排名 |
+| `validate` | 同一组输入 + 已保存的候选行 | PASS/FAIL 摘要、逐查询差异及退出码 |
+
+**接入自己的数据前：**记录必须已经具备 ID、文本和规定的类型标签。工具用于词法候选初筛和输出核验，不理解文本含义，不解析 PDF/Word，不做 OCR，不从文档提取需求对象，不判断语义合规，也不作招投标决策。文本相似和数字重合不能证明需求已满足。映射数据前请阅读[输入规范](#输入规范)。
+
+下面的合成演示先让生成结果得到 `PASS`，再仅将保存的分数从 `1.0` 改为 `0.5`，得到 `FAIL` / `SCORE_DRIFT`。生成与校验共用评分实现；PASS 只表示符合该词法契约，不能证明语义正确或算法无缺陷。
+
+Qi Zheng 的个人开源项目 · MIT 许可证。Python 模块：`jsonl_candidate_align`；命令：`jsonl-align`。
 
 ## 环境与安装
 
 要求Python >=3.11。运行源码仅使用Python标准库。源码构建需要`setuptools>=77`和`wheel`。
 
-在包含`pyproject.toml`的源码目录中安装：
+在终端中取得源码，进入包含 `pyproject.toml` 的目录（已有源码副本时跳过前两条命令）：
+
+```powershell
+git clone https://github.com/xmmyyx/jsonl-candidate-align.git
+cd jsonl-candidate-align
+python -m venv .venv
+```
+
+激活环境：PowerShell 使用 `.\.venv\Scripts\Activate.ps1`，POSIX shell 使用 `source .venv/bin/activate`，然后安装：
 
 ```powershell
 python -m pip install .
@@ -60,6 +77,40 @@ jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --act
 
 `PASS`表示这些输入的输出符合词法契约，不代表语义匹配正确、需求已满足或招投标合规。
 
+### 失败演示：排名没变，也能发现分数被改动
+
+对这组文本完全相同的记录，生成行的 `score` 为 `1.0`，`rank` 为 `1`。将下面的代码保存为同一工作目录下的 `change_demo_score.py`。它另外写出一份合成结果副本，仅将 `score` 改为 `0.5`；输入、原输出、ID 和排名保持不变。再次运行该辅助脚本会覆盖 `candidate_alignment_rows_modified.jsonl`。
+
+```python
+import json
+from pathlib import Path
+
+source = Path("alignment-output/candidate_alignment_rows.jsonl")
+rows = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
+assert len(rows) == 1 and rows[0]["score"] == 1.0
+rows[0]["score"] = 0.5
+Path("candidate_alignment_rows_modified.jsonl").write_text(
+    "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+    encoding="utf-8",
+)
+```
+
+运行脚本，再校验修改后的副本。`validation-fail-output` 必须此前不存在：
+
+```powershell
+python change_demo_score.py
+jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --actual candidate_alignment_rows_modified.jsonl --output-dir validation-fail-output
+```
+
+校验命令会按演示预期以退出码 `1` 结束。其 `validation_summary.json` 中 `status` 为 `"FAIL"`，`failed_queries` 为 `["DEMO-Q1"]`。在 `validation-fail-output/object_comparison.jsonl` 中，该查询的 `difference_classes` 同时包含 `SCORE_DRIFT` 和 `LEXICAL_METRIC_OR_ELIGIBILITY_MISMATCH`，`score_drift_candidate_ids` 为 `["DEMO-C1"]`。
+
+| DEMO-C1 的保存结果 | 排名 | 校验结果 | 退出码 |
+|---|---|---|---|
+| 生成的 `score: 1.0` | 1 | `PASS` | 0 |
+| 副本中的 `score: 0.5` | 1 | `FAIL`，含 `SCORE_DRIFT` | 1 |
+
+`SCORE_DRIFT` 标记同一候选的保存分数与重算参考不一致。即使 ID 和排名看起来正常，它也能发现后续转换改动了分数；它不能解释改动原因，也不检测含义变化。这是受控的合成契约演示，不是外部准确率测试。评分使用浮点数，输出舍入到六位小数；校验使用 Decimal 精确比较保存数值与重算输出。
+
 ## 技术文章
 
 [这篇英文技术文章](https://dev.to/xmmyyx/why-i-added-a-validator-to-a-small-jsonl-candidate-ranker-43c7)介绍了两个 CLI 入口的分工、合成分数漂移示例，以及校验结果的能力边界。
@@ -99,6 +150,19 @@ jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --act
 | 候选 | `pages` | 可选的正整数列表，默认为空列表 |
 
 候选类型为`M3_AUTO_KEEP`、`M4_AUTO_KEEP`、`NARRATIVE_RESPONSE`、`TEMPLATE_COMMITMENT`、`MANUAL_RESOLVED_FACT`、`MANUAL_RESOLVED_BUNDLE`和`VISUAL_EVIDENCE`。这些只是兼容性标签，程序不证明标签是否符合记录的实际含义。任何输入对象中已有的`pages`字段都会检查其正整数列表格式，包括查询对象中的该字段。
+
+### 字段名和类型标签对接入有什么影响
+
+这里的**查询**是你想查找的文本，**候选**是待搜索池中的记录。`blind_id` 就是查询 ID，`holdout_unit_id` 就是候选 ID；这些是固定字段名，标识和 `comparable_text` 文本由你提供。JSONL 是每个非空行放一个 JSON 对象的文本格式，不是 JSON 数组；上面的最小文件可作为起始模板。
+
+允许的类型标签是这套规范的特定取值，不是任意 Python 类型，也不是通用业务分类。CLI 不推断类型、不接受自定义标签，也没有关闭类型过滤的参数。接入其他数据集前，需要自行确定映射：
+
+| 查询标签 | 因类型不兼容而排除的候选标签 |
+|---|---|
+| `SC`、`MRU` | `VISUAL_EVIDENCE` |
+| `SU`、`EI` | `NARRATIVE_RESPONSE` |
+
+类型兼容不等于候选入选，仍须满足下文的词法规则。演示使用兼容的 `SC` / `M3_AUTO_KEEP` 组合，仅用于运行 CLI，不是对所有数据的通用映射建议。`AUTO_KEEP` 不会触发自动审批，`VISUAL_EVIDENCE` 也不启用图像分析：评分仍使用 `comparable_text`。你需要负责将数据映射到这些标签，程序不核实标签是否符合实际含义。
 
 ## 评分规则
 

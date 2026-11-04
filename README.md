@@ -1,18 +1,35 @@
 # JSONL Candidate Align
 
-Lexical candidate retrieval and exact-score validation for structured JSONL records. A personal open-source project by Qi Zheng, licensed under MIT.
+**Rank text records from JSONL, then check that saved scores and rankings still agree with the original inputs.**
 
 [简体中文](README.zh-CN.md)
 
-`jsonl-candidate-align` ranks candidate records using character-trigram and numeric overlap, then checks candidate output against the same lexical rules. The Python module is `jsonl_candidate_align`; the command is `jsonl-align`.
+Have a query such as `cobalt sensor 314159` and a pool of text records to review? `jsonl-align align` returns up to eight candidates per query using shared character sequences and numbers. If a later script edits or transforms the saved result, `jsonl-align validate` recomputes the reference from the original inputs and reports mismatched scores, candidates or ranks.
 
-Inputs must already be structured and typed by the caller. The program does not parse PDF or Word files, perform OCR, extract requirement objects, determine semantic compliance, or make procurement decisions. Similar text and matching numbers are retrieval signals, not proof that a requirement is satisfied.
+| Step | You supply | You get |
+|---|---|---|
+| `align` | Query JSONL + candidate-pool JSONL | Ranked candidate rows with IDs, scores and supplied page references |
+| `validate` | The same inputs + saved candidate rows | PASS/FAIL summary, per-query differences and an exit code |
+
+**Before using your own data:** records must already have IDs, text and one of the fixed type labels. This is a lexical shortlist and output-checking tool: it does not understand meaning, parse PDF/Word, perform OCR, extract requirement objects, determine semantic compliance or make procurement decisions. Similar text and matching numbers do not prove that a requirement is satisfied. See [Input contract](#input-contract) before mapping your data.
+
+The synthetic demo below gives `PASS` for the generated row, then `FAIL` / `SCORE_DRIFT` after only its saved score changes from `1.0` to `0.5`. Generation and validation share the scoring implementation; PASS confirms agreement with that lexical contract, not semantic correctness or a defect-free algorithm.
+
+Personal open-source project by Qi Zheng · MIT License. Python module: `jsonl_candidate_align`; command: `jsonl-align`.
 
 ## Requirements and installation
 
 Requires Python >=3.11. Runtime code uses only the Python standard library. Source builds require `setuptools>=77` and `wheel`.
 
-From the source directory containing `pyproject.toml`:
+In a terminal, get the source and enter the directory containing `pyproject.toml` (skip the first two commands if you already have a checkout):
+
+```powershell
+git clone https://github.com/xmmyyx/jsonl-candidate-align.git
+cd jsonl-candidate-align
+python -m venv .venv
+```
+
+Activate the environment: `.\.venv\Scripts\Activate.ps1` in PowerShell, or `source .venv/bin/activate` in a POSIX shell. Then install:
 
 ```powershell
 python -m pip install .
@@ -60,6 +77,40 @@ This example produces one candidate row in `alignment-output/candidate_alignment
 
 `PASS` confirms agreement with the lexical contract for these inputs. It does not establish correct semantic matching, requirement satisfaction or procurement compliance.
 
+### Fail: detect a changed score even when rank stays the same
+
+For this single identical-text pair, the generated row has `score: 1.0` and `rank: 1`. Save the following as `change_demo_score.py` in the same working directory. It writes a separate synthetic copy with only `score` changed to `0.5`; the inputs, original output, IDs and rank stay unchanged. The helper file `candidate_alignment_rows_modified.jsonl` is overwritten if this helper runs again.
+
+```python
+import json
+from pathlib import Path
+
+source = Path("alignment-output/candidate_alignment_rows.jsonl")
+rows = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
+assert len(rows) == 1 and rows[0]["score"] == 1.0
+rows[0]["score"] = 0.5
+Path("candidate_alignment_rows_modified.jsonl").write_text(
+    "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+    encoding="utf-8",
+)
+```
+
+Run it, then validate the modified copy. `validation-fail-output` must not already exist:
+
+```powershell
+python change_demo_score.py
+jsonl-align validate --queries queries.jsonl --candidates candidates.jsonl --actual candidate_alignment_rows_modified.jsonl --output-dir validation-fail-output
+```
+
+The validation command intentionally exits with code `1`. Its `validation_summary.json` has `status: "FAIL"` and `failed_queries: ["DEMO-Q1"]`. In `validation-fail-output/object_comparison.jsonl`, the query's `difference_classes` includes both `SCORE_DRIFT` and `LEXICAL_METRIC_OR_ELIGIBILITY_MISMATCH`; `score_drift_candidate_ids` is `["DEMO-C1"]`.
+
+| Saved result for DEMO-C1 | Rank | Validation | Exit code |
+|---|---|---|---|
+| Generated `score: 1.0` | 1 | `PASS` | 0 |
+| Copied row, `score: 0.5` | 1 | `FAIL`, including `SCORE_DRIFT` | 1 |
+
+`SCORE_DRIFT` identifies a shared candidate whose saved score differs from the recomputed reference. It can catch a score altered by a downstream transformation even when IDs and rank still look right; it does not identify the cause or detect changes in meaning. This controlled failure is a synthetic contract demonstration, not an external accuracy test. Scoring uses floating-point arithmetic and rounds output to six decimals; validation uses exact Decimal comparisons of the saved numeric values and recomputed output.
+
 ## Technical walkthrough
 
 [Why I Added a Validator to a Small JSONL Candidate Ranker](https://dev.to/xmmyyx/why-i-added-a-validator-to-a-small-jsonl-candidate-ranker-43c7) walks through the two CLI commands, a synthetic score-drift example, and the limits of validation.
@@ -99,6 +150,19 @@ Use UTF-8 JSONL, optionally with a BOM, containing one JSON object per nonblank 
 | Candidate | `pages` | Optional list of positive integers; defaults to an empty list |
 
 Candidate types are `M3_AUTO_KEEP`, `M4_AUTO_KEEP`, `NARRATIVE_RESPONSE`, `TEMPLATE_COMMITMENT`, `MANUAL_RESOLVED_FACT`, `MANUAL_RESOLVED_BUNDLE` and `VISUAL_EVIDENCE`. These are compatibility labels; the program does not establish that they accurately describe a record. Any supplied `pages` field is checked for positive integer values, including when it occurs on a query object.
+
+### What the field names and type labels mean for integration
+
+Here, a **query** is the text you want to look up; a **candidate** is a record in the pool you want to search. `blind_id` is your query ID and `holdout_unit_id` is your candidate ID. These are fixed schema names; you supply the identifiers and `comparable_text` yourself. JSONL is a text format with one JSON object on each nonblank line, not a JSON array. The minimal files above are the starting template.
+
+The accepted type labels are specific to this schema, not arbitrary Python types or a general business taxonomy. The CLI does not infer types, accept custom labels or offer a flag to disable type filtering. Choose a mapping deliberately before using this with another dataset:
+
+| Query labels | Candidate labels excluded by type compatibility |
+|---|---|
+| `SC`, `MRU` | `VISUAL_EVIDENCE` |
+| `SU`, `EI` | `NARRATIVE_RESPONSE` |
+
+Compatibility alone does not admit a candidate; the lexical rules below still apply. The demo uses the compatible pair `SC` / `M3_AUTO_KEEP` solely to exercise the CLI, not as a universal mapping recommendation. `AUTO_KEEP` does not trigger an automatic approval, and `VISUAL_EVIDENCE` does not enable image analysis: scoring still uses `comparable_text`. Adapting your data to these labels is your responsibility; the program does not verify that the labels describe its meaning.
 
 ## Scoring rules
 
